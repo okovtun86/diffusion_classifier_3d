@@ -15,12 +15,13 @@ from scipy.optimize import curve_fit
 
 def compute_fingerprints(traj):
     """Compute fingerprints for a single trajectory."""
+    dt = 1
     traj = np.array(traj)  
     positions = traj[:, :3]  
     times = np.arange(len(positions))  
 
     step_lengths = np.sqrt(np.sum(np.diff(positions, axis=0)**2, axis=1))
-    time_intervals = np.diff(times)
+    time_intervals = np.diff(times)*dt
     velocities = step_lengths / time_intervals
 
     displacements = positions - positions[0]
@@ -36,7 +37,7 @@ def compute_fingerprints(traj):
     straightness_index = end_to_start_distance / total_path_length
 
     msd_list = []
-    max_lag = int(0.25 * len(times))  
+    max_lag = int(0.25 * len(times))
     for lag in range(1, max_lag):
         squared_displacements = [
             np.linalg.norm(positions[j] - positions[j + lag])**2
@@ -44,16 +45,26 @@ def compute_fingerprints(traj):
         ]
         msd_list.append(np.mean(squared_displacements))
 
-    time_lags = np.arange(1, max_lag)
+    time_lags = (np.arange(1, max_lag))*dt
 
     def power_law_3D(t, D, alpha):
         return 6 * D * t**alpha
 
     try:
-        params, _ = curve_fit(power_law_3D, time_lags, msd_list, bounds=(0, [np.inf, 2]))
+        params, pcov = curve_fit(power_law_3D, time_lags, msd_list, bounds=(0, [np.inf, 2]))
         D_fit, alpha = params
+        msdpred = power_law_3D(time_lags, *params)
+        
+        # residual sum of squares
+        ss_res = np.sum((msd_list - msdpred) ** 2)
+        # total sum of squares
+        ss_tot = np.sum((msd_list - np.mean(msd_list)) ** 2)
+
+        # r-squared
+        r2 = 1 - (ss_res / ss_tot)
+        
     except RuntimeError:
-        D_fit, alpha = np.nan, np.nan
+        D_fit, alpha, r2 = np.nan, np.nan, np.nan
 
 
     max_radius = np.max(radii)
@@ -78,14 +89,15 @@ def compute_fingerprints(traj):
         "Radius_of_Gyration": radius_of_gyration,
         "Straightness_Index": straightness_index,
         "D_PowerLaw": D_fit, 
-        "Alpha_PowerLaw": alpha,  
+        "Alpha_PowerLaw": alpha, 
+        "Goodness_of_fit": r2,
     }
 
 
 def main():
 
-    print("Loading synthetic trajectories from X_3D.pkl...")
-    with open("X_3D.pkl", "rb") as f:
+    print("Loading synthetic trajectories from X_3D_v2.pkl...")
+    with open("X_3D_v2.pkl", "rb") as f:
         trajectories_dict = pickle.load(f)
 
     print("Inspecting data format...")
@@ -105,8 +117,8 @@ def main():
 
     fingerprints_df = pd.DataFrame(fingerprints_list)
 
-    print("Saving fingerprints to synthetic_fingerprints.csv...")
-    fingerprints_df.to_csv("synthetic_fingerprints.csv", index=False)
+    print("Saving fingerprints to synthetic_fingerprints_v2.csv...")
+    fingerprints_df.to_csv("synthetic_fingerprints_dt_1.csv", index=False)
 
     print("Fingerprints saved successfully!")
 
@@ -114,42 +126,52 @@ if __name__ == "__main__":
     main()
 
 #%%
-
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 
+
 print("Loading fingerprints data from CSV...")
-features_df = pd.read_csv("synthetic_fingerprints.csv")
+features_df = pd.read_csv("synthetic_fingerprints_v2.csv")
 
-normal_trace_features = features_df[features_df['Diffusion_Type']=='Normal'].iloc[7]
-directed_trace_features = features_df[features_df['Diffusion_Type']=='Directed'].iloc[10]
-confined_trace_features = features_df[features_df['Diffusion_Type']=='Confined'].iloc[5]
-anomalous_trace_features = features_df[features_df['Diffusion_Type']=='Anomalous'].iloc[20]
+average_features = features_df.groupby("Diffusion_Type").mean()
 
-selected_features = pd.DataFrame([
-    normal_trace_features,
-    directed_trace_features,
-    confined_trace_features,
-    anomalous_trace_features
-])
-
-selected_features = selected_features.drop(columns=["Trajectory_ID", "Diffusion_Type"])
+average_features = average_features.drop(columns=["Trajectory_ID"], errors="ignore")
 
 scaler = StandardScaler()
 normalized_features = pd.DataFrame(
-    scaler.fit_transform(selected_features),
-    columns=selected_features.columns,
-    index=["ND", "DD", "CD", "AD"]
+    scaler.fit_transform(average_features),
+    columns=average_features.columns,
+    index=["AD", "CD", "DM", "ND"]  
 )
 
-plt.figure(figsize=(10, 6), dpi=600)
+
+plt.figure(figsize=(12, 8), dpi=600)
 sns.heatmap(
-    normalized_features, annot=True, cmap="coolwarm", cbar=True, linewidths=0.5
+    normalized_features,
+    annot=True,
+    annot_kws={"size": 14},  
+    cmap="coolwarm",
+    cbar=True,
+    cbar_kws={"shrink": 0.8, "aspect": 10, "format": "%.1f"},  
+    linewidths=0.5,
+    fmt=".2f"  
 )
 
-plt.xlabel("Features")
-plt.ylabel("Diffusion Type")
+plt.xlabel("Normalized Features", fontsize=18)
+plt.ylabel("Diffusion Type", fontsize=18)
+plt.xticks(fontsize=16, rotation=45, ha="right")  
+plt.yticks(fontsize=16)
+
+
+colorbar = plt.gca().collections[0].colorbar
+colorbar.ax.tick_params(labelsize=16)  # Adjust tick font size
+
 plt.tight_layout()
+
+output_file = "fingerprints_dt_1.png"
+plt.savefig(output_file, format='png', dpi=600, bbox_inches='tight')
+print(f"Figure saved as '{output_file}'.")
+
 plt.show()

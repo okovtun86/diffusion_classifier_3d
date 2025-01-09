@@ -14,7 +14,9 @@ from mpl_toolkits.mplot3d import Axes3D
 
 def GenerateParams3D(numparams, dt, D):
     """
-    Generate random parameters for 3D diffusion types based on Kowalek et al. (2020).
+    Generate random parameters for 3D diffusion types based on work by
+    Wagner et al., Kowalek et al., and Pinholt et al. 
+    
     """
     Nmin, Nmax = 30, 600
     Bmin, Bmax = 1, 6
@@ -35,7 +37,7 @@ def GenerateParams3D(numparams, dt, D):
     r_c = np.sqrt(D * NsCD * dt / B)
 
     R = np.random.uniform(Rmin, Rmax, size=numparams)
-    v = np.sqrt(R * 4 * D / TDM)
+    v = np.sqrt(R * 6 * D / TDM)
 
     alpha = np.random.uniform(alphamin, alphamax, size=numparams)
 
@@ -190,8 +192,8 @@ def Gen_anomalous_diff_3D(D, dt, alphs, sigmaAD, Ns, withlocerr=True):
 
 
 def main():
-    numparams = 200  
-    dt = 1         
+    numparams = 500  
+    dt = 1       
     D = 0.02          
 
     params = GenerateParams3D(numparams, dt, D)
@@ -228,54 +230,104 @@ def main():
 
 traces = main()
 
-#%%
-import pickle
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
-print("Loading synthetic trajectories from X_3D.pkl...")
-with open("X_3D.pkl", "rb") as f:
-    traces = pickle.load(f)
-
-normal_trace_sample = traces["Normal"][7]
-directed_trace_sample = traces["Directed"][10]
-confined_trace_sample = traces["Confined"][5]
-anomalous_trace_sample = traces["Anomalous"][20]
-
-all_trajectories = [normal_trace_sample, directed_trace_sample, confined_trace_sample, anomalous_trace_sample]
-all_points = [point for traj in all_trajectories for point in traj]
-all_points = np.array(all_points)
-x_min, x_max = all_points[:, 0].min(), all_points[:, 0].max()
-y_min, y_max = all_points[:, 1].min(), all_points[:, 1].max()
-z_min, z_max = all_points[:, 2].min(), all_points[:, 2].max()
-
-fig = plt.figure(figsize=(10, 8), dpi=600)
-ax = fig.add_subplot(111, projection='3d')
-
-ax.plot(normal_trace_sample[:, 0], normal_trace_sample[:, 1], normal_trace_sample[:, 2], color='green', label='Normal Diffusion')
-ax.plot(directed_trace_sample[:, 0], directed_trace_sample[:, 1], directed_trace_sample[:, 2], color='orange', label='Directed Motion')
-ax.plot(confined_trace_sample[:, 0], confined_trace_sample[:, 1], confined_trace_sample[:, 2], color='magenta', label='Confined Diffusion')
-ax.plot(anomalous_trace_sample[:, 0], anomalous_trace_sample[:, 1], anomalous_trace_sample[:, 2], color='blue', label='Anomalous Diffusion')
-
-ax.set_xlabel("X")
-ax.set_ylabel("Y")
-ax.set_zlabel("Z")
-ax.set_xlim(x_min, x_max)
-ax.set_ylim(y_min, y_max)
-ax.set_zlim(z_min, z_max)
-
-ax.legend()
-
-plt.tight_layout()
-plt.show()
 
 #%%
 
 import pickle
 
-file_path = 'X_3D.pkl'
+file_path = 'X_3D_v2.pkl'
 
 with open(file_path, 'wb') as file:
     pickle.dump(traces, file)
 
 print(f"Traces saved successfully as {file_path}")
+
+
+
+#%%
+import pickle
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import numpy as np
+
+# Load synthetic trajectories
+print("Loading synthetic trajectories from X_3D_v2.pkl...")
+with open("X_3D_v2.pkl", "rb") as f:
+    traces = pickle.load(f)
+
+# Define diffusion types, colors, and offsets
+diffusion_types = ["Normal", "Directed", "Confined", "Anomalous"]
+colors = {"Normal": "green", "Directed": "orange", "Confined": "magenta", "Anomalous": "blue"}
+offsets = {"Normal": (0, 0, 0), "Directed": (50, 0, 0), "Confined": (0, 50, 0), "Anomalous": (50, 50, 0)}
+
+# Calculate axis limits based on all trajectories
+all_points = np.vstack([np.vstack(traces[diff_type]) for diff_type in diffusion_types])
+x_min, x_max = all_points[:, 0].min(), all_points[:, 0].max()
+y_min, y_max = all_points[:, 1].min(), all_points[:, 1].max()
+z_min, z_max = all_points[:, 2].min(), all_points[:, 2].max()
+
+# Normalize axis limits
+max_range = max(x_max - x_min, y_max - y_min, z_max - z_min)
+x_center = (x_max + x_min) / 2
+y_center = (y_max + y_min) / 2
+z_center = (z_max + z_min) / 2
+
+x_min, x_max = x_center - max_range / 2, x_center + max_range / 2
+y_min, y_max = y_center - max_range / 2, y_center + max_range / 2
+z_min, z_max = z_center - max_range / 2, z_center + max_range / 2
+
+# Create a single 3D plot for all trajectories
+fig = plt.figure(figsize=(10, 8), dpi=600)
+ax = fig.add_subplot(111, projection='3d')
+
+for diff_type in diffusion_types:
+    for trajectory in traces[diff_type]:
+        offset = offsets[diff_type]
+        trajectory_offset = trajectory + np.array(offset)
+        ax.plot(
+            trajectory_offset[:, 0], trajectory_offset[:, 1], trajectory_offset[:, 2],
+            color=colors[diff_type], alpha=0.6, linewidth=0.8
+        )
+
+# Set normalized axis limits
+ax.set_xlim(x_min, x_max + 50)
+ax.set_ylim(y_min, y_max + 50)
+ax.set_zlim(z_min, z_max)
+
+# Add ticks and increase tick font size
+ax.tick_params(axis='both', which='major', labelsize=16)
+ax.xaxis.set_tick_params(width=2, length=6)
+ax.yaxis.set_tick_params(width=2, length=6)
+ax.zaxis.set_tick_params(width=2, length=6)
+
+# Set axis labels with increased font size
+ax.set_xlabel("X (μm)", labelpad=17, fontsize=18)
+ax.set_ylabel("Y (μm)", labelpad=17, fontsize=18)
+ax.set_zlabel("Z (μm)", labelpad=17, fontsize=18)
+
+# Customize legend with horizontal layout
+legend_labels = [
+    plt.Line2D([0], [0], color=colors[diff_type], lw=2, label=diff_type)
+    for diff_type in diffusion_types
+]
+ax.legend(
+    handles=legend_labels,
+    loc="upper center",        # Position at the top center of the plot
+    bbox_to_anchor=(0.5, 1.01), # Adjust location outside the plot
+    ncol=len(diffusion_types), # Arrange labels in a single row
+    fontsize=18               # Increase font size
+)
+
+# Final adjustments and show plot
+plt.tight_layout()
+
+
+# Save the figure as a PNG file
+output_file = "3D_diffusion_trajectories.png"
+plt.savefig(output_file, format='png', dpi=600, bbox_inches='tight')
+print(f"Figure saved as '{output_file}'.")
+
+plt.show()
+
+
+

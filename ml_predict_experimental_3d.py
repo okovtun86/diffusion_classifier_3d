@@ -51,10 +51,16 @@ def compute_fingerprints(traj):
         return 6 * D * t**alpha
 
     try:
-        params, _ = curve_fit(power_law_3D, time_lags, msd_list, bounds=(0, [np.inf, 2]))
+        params, pcov = curve_fit(power_law_3D, time_lags, msd_list, bounds=(0, [np.inf, 2]))
         D_fit, alpha = params
+        msdpred = power_law_3D(time_lags, *params)
+        
+        ss_res = np.sum((msd_list - msdpred) ** 2)
+        ss_tot = np.sum((msd_list - np.mean(msd_list)) ** 2)
+        r2 = 1 - (ss_res / ss_tot)
+        
     except RuntimeError:
-        D_fit, alpha = np.nan, np.nan
+        D_fit, alpha, r2 = np.nan, np.nan, np.nan
 
     max_radius = np.max(radii)
     range_of_radii = np.max(radii) - np.min(radii)
@@ -78,18 +84,19 @@ def compute_fingerprints(traj):
         "Radius_of_Gyration": radius_of_gyration,
         "Straightness_Index": straightness_index,
         "D_PowerLaw": D_fit,  
-        "Alpha_PowerLaw": alpha, 
+        "Alpha_PowerLaw": alpha,
+        "Goodness_of_fit": r2,
     }
 
 
 def main():
 
     print("Loading trained model, scaler, and label encoder...")
-    with open("xgboost_model.pkl", "rb") as f:
+    with open("xgboost_model_dt_1.pkl", "rb") as f:
         model = pickle.load(f)
-    with open("scaler.pkl", "rb") as f:
+    with open("scaler_dt_1.pkl", "rb") as f:
         scaler = pickle.load(f)
-    with open("label_encoder.pkl", "rb") as f:
+    with open("label_encoder_dt_1.pkl", "rb") as f:
         label_encoder = pickle.load(f)
 
     print("Loading experimental trajectories...")
@@ -123,9 +130,9 @@ def main():
     predicted_classes = label_encoder.inverse_transform(predictions)
 
     fingerprints_df["Predicted_Diffusion_Type"] = predicted_classes
-    fingerprints_df.to_csv("predicted_experimental_results.csv", index=False)
+    fingerprints_df.to_csv("predicted_experimental_results_v2.csv", index=False)
 
-    print("\nPredictions saved as 'predicted_experimental_results.csv'.")
+    print("\nPredictions saved as 'predicted_experimental_results_v2.csv'.")
     print("\nClass Distribution:")
     print(fingerprints_df["Predicted_Diffusion_Type"].value_counts())
 
@@ -140,51 +147,94 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
 print("Loading experimental trajectories...")
-trajectories_df = pd.read_csv("golgi7_spots.csv")  
-
-labels = pd.read_csv("predicted_experimental_results.csv")  
-
-fig = plt.figure(figsize=(12, 12), dpi=600)
-ax = fig.add_subplot(111, projection='3d')
+trajectories_df = pd.read_csv("golgi7_spots.csv")
+labels = pd.read_csv("predicted_experimental_results_v2.csv")
 
 colors = {"Normal": "green", "Directed": "orange", "Confined": "magenta", "Anomalous": "blue"}
 
+print("Creating 2D plot...")
+fig_2d = plt.figure(figsize=(10, 8), dpi=600)
+ax2d = fig_2d.add_subplot(111)
 for diffusion_type, color in colors.items():
     trajectories = labels[labels["Predicted_Diffusion_Type"] == diffusion_type]
     track_ids = trajectories["Track ID"].unique()
     for track_id in track_ids:
-        track = trajectories_df[trajectories_df["Track ID"] == track_id][["X", "Y", "Z"]].values
-        ax.plot(track[:, 0], track[:, 1], track[:, 2], color=color, alpha=0.6, label=diffusion_type)
+        track = trajectories_df[trajectories_df["Track ID"] == track_id][["X", "Y"]].values
+        ax2d.plot(track[:, 0], track[:, 1], color=color, alpha=0.6)
 
-handles, labels = ax.get_legend_handles_labels()
-unique_labels = dict(zip(labels, handles))
-ax.legend(unique_labels.values(), unique_labels.keys(), loc="best", fontsize=18)
-
-ax.set_xlabel("X (μm)", fontsize=18, labelpad=10)
-ax.set_ylabel("Y (μm)", fontsize=18, labelpad=10)
-ax.set_zlabel("Z (μm)", fontsize=18)
-
-ax.tick_params(axis='both', which='major', labelsize=16)
-
+ax2d.set_xlabel("X (μm)", fontsize=18)
+ax2d.set_ylabel("Y (μm)", fontsize=18)
+ax2d.tick_params(axis='both', which='major', labelsize=16)
 
 x_limits = [trajectories_df["X"].min(), trajectories_df["X"].max()]
 y_limits = [trajectories_df["Y"].min(), trajectories_df["Y"].max()]
 z_limits = [trajectories_df["Z"].min(), trajectories_df["Z"].max()]
 
 max_range = max(
-    x_limits[1] - x_limits[0], 
-    y_limits[1] - y_limits[0], 
-    z_limits[1] - z_limits[0]
+    x_limits[1] - x_limits[0],
+    y_limits[1] - y_limits[0],
+    z_limits[1] - z_limits[0],
 ) / 2.0
 
 x_mid = (x_limits[1] + x_limits[0]) / 2.0
 y_mid = (y_limits[1] + y_limits[0]) / 2.0
-z_mid = (z_limits[1] + z_limits[0]) / 2.0
 
-ax.set_xlim(x_mid - max_range, x_mid + max_range)
-ax.set_ylim(y_mid - max_range, y_mid + max_range)
-ax.set_zlim(z_mid - max_range, z_mid + max_range)
+ax2d.set_xlim(x_mid - max_range, x_mid + max_range)
+ax2d.set_ylim(y_mid - max_range, y_mid + max_range)
+
+handles = [plt.Line2D([0], [0], color=color, lw=2, label=diffusion_type) for diffusion_type, color in colors.items()]
+ax2d.legend(
+    handles=handles,
+    loc="upper center",
+    bbox_to_anchor=(0.5, 1.1),  
+    ncol=len(colors),
+    fontsize=18
+)
 
 plt.tight_layout()
+
+output_file = "experimental_tracks_2D_plot.png"
+plt.savefig(output_file, format='png', dpi=600, bbox_inches='tight')
+print(f"Figure saved as '{output_file}'.")
+
 plt.show()
+
+print("Creating 3D plot...")
+fig_3d = plt.figure(figsize=(10, 8), dpi=600)
+ax3d = fig_3d.add_subplot(111, projection='3d')
+for diffusion_type, color in colors.items():
+    trajectories = labels[labels["Predicted_Diffusion_Type"] == diffusion_type]
+    track_ids = trajectories["Track ID"].unique()
+    for track_id in track_ids:
+        track = trajectories_df[trajectories_df["Track ID"] == track_id][["X", "Y", "Z"]].values
+        ax3d.plot(track[:, 0], track[:, 1], track[:, 2], color=color, alpha=0.6)
+
+
+ax3d.set_xlabel("X (μm)", fontsize=18, labelpad=17)
+ax3d.set_ylabel("Y (μm)", fontsize=18, labelpad=17)
+ax3d.set_zlabel("Z (μm)", fontsize=18, labelpad=17)
+ax3d.tick_params(axis='both', which='major', labelsize=16)
+
+z_range_factor = 2.5  
+z_mid = (z_limits[1] + z_limits[0]) / 2.0
+z_limits_reduced = [
+    z_mid - z_range_factor * (z_limits[1] - z_limits[0]) / 2.0,
+    z_mid + z_range_factor * (z_limits[1] - z_limits[0]) / 2.0,
+]
+
+ax3d.set_xlim(x_mid - max_range, x_mid + max_range)
+ax3d.set_ylim(y_mid - max_range, y_mid + max_range)
+ax3d.set_zlim(z_limits_reduced[0], z_limits_reduced[1])
+
+plt.tight_layout()
+
+output_file = "experimental_tracks_3D_plot.png"
+plt.savefig(output_file, format='png', dpi=600, bbox_inches='tight')
+print(f"Figure saved as '{output_file}'.")
+
+plt.show()
+
+
+
+
 

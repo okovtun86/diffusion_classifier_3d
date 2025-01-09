@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 def plot_confusion_matrix(y_test, y_pred, class_names):
     """Generate and visualize the confusion matrix."""
     cm = confusion_matrix(y_test, y_pred, labels=class_names)
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6),dpi=600)
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 4.5),dpi=600)
     ax.matshow(cm, cmap="Blues")
 
     for i in range(cm.shape[0]):
@@ -37,13 +37,18 @@ def plot_confusion_matrix(y_test, y_pred, class_names):
     )
     ax.xaxis.set_ticks_position("bottom")
     plt.tight_layout()
+
+    output_file = "confusion_matrix_dt_1.png"
+    plt.savefig(output_file, format='png', dpi=600, bbox_inches='tight')
+    print(f"Figure saved as '{output_file}'.")
+    
     plt.show()
 
 
 def main():
 
     print("Loading fingerprints data from CSV...")
-    fingerprints_df = pd.read_csv("synthetic_fingerprints.csv")
+    fingerprints_df = pd.read_csv("synthetic_fingerprints_dt_1.csv")
 
     print("Extracting features and target labels...")
     feature_columns = [col for col in fingerprints_df.columns if col not in ["Trajectory_ID", "Diffusion_Type"]]
@@ -73,11 +78,11 @@ def main():
     model.fit(X_train, y_train)
 
     print("Saving model, scaler, and label encoder...")
-    with open("xgboost_model.pkl", "wb") as f:
+    with open("xgboost_model_dt_1.pkl", "wb") as f:
         pickle.dump(model, f)
-    with open("scaler.pkl", "wb") as f:
+    with open("scaler_dt_1.pkl", "wb") as f:
         pickle.dump(scaler, f)
-    with open("label_encoder.pkl", "wb") as f:
+    with open("label_encoder_dt_1.pkl", "wb") as f:
         pickle.dump(label_encoder, f)
 
     print("Model, scaler, and label encoder saved successfully.")
@@ -95,7 +100,7 @@ def main():
         class_names=class_names,
         
     )
-
+    
     print("\nClassification Report:")
     print(classification_report(y_test_decoded, y_pred_decoded, target_names=class_names))
 
